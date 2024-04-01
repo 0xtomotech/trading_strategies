@@ -1,0 +1,40 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+//@version=5
+strategy("Squeeze Breakout Strat LIVE", overlay=true)
+
+EMA_L = input.int(defval = 20)
+
+[middle, upper, lower] = ta.bb(close, 20, 2) // bollinger bands
+[middle2, upper2, lower2] = ta.kc(close, 20, 1.5) // keltner channel
+RSI = ta.rsi(close,14)
+EMA = ta.ema(close, EMA_L)
+
+// Buy and Short Rules
+buy = (upper < upper2 and lower > lower2) and RSI > 50
+short = (upper < upper2 and lower > lower2) and RSI < 50
+
+sell = ta.crossunder(close,EMA)
+cover = ta.crossover(close,EMA)
+
+if buy
+    strategy.entry("long", direction = strategy.long, comment = "LONG")
+
+if sell
+    strategy.close("long", comment = "SELL")
+
+if short
+    strategy.entry("short", direction = strategy.long, comment = "SHORT")
+
+if cover
+    strategy.close("short", comment = "COVER")
+
+
+// default script
+// longCondition = ta.crossover(ta.sma(close, 14), ta.sma(close, 28))
+// if (longCondition)
+//     strategy.entry("My Long Entry Id", strategy.long)
+
+// shortCondition = ta.crossunder(ta.sma(close, 14), ta.sma(close, 28))
+// if (shortCondition)
+//     strategy.entry("My Short Entry Id", strategy.short)

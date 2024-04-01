@@ -1,0 +1,173 @@
+//@version=5
+// Simple Squeeze Momentum Strategy based on LazyBear's Squeeze Momentum Indicator
+
+strategy("Squeeze Momentum STRAT 2")
+
+// INPUTS
+
+// Inputs for Bollinger Bands (BB) and Keltner Channels (KC)
+length = input(20, title="BB Length")
+mult = input(2.0, title="BB MultFactor")
+lengthKC = input(20, title="KC Length")
+multKC = input(1.5, title="KC MultFactor")
+useTrueRange = input(true, title="Use TrueRange (KC)")
+
+// // Inputs for strategy - IGNORE for now
+// stopLoss = input(2, title="Stop Loss (%)")
+// takeProfit = input(10, title="Take Profit (%)")
+
+// Input for the trend confirmation EMA
+emaLength = input(200, title="EMA Trend Confirmation Length")
+
+// ATR Calculation
+atrLength = input(14, title="ATR Length")
+atrMultiplier = input(2.0, title="ATR Multiplier for Stop Loss")
+atr = ta.atr(atrLength)
+
+// cooldownPeriod for entering new trades
+cooldownPeriod = input(6, title="Cooldown Period (bars)")
+
+
+// CALCULATIONS
+
+// Calculate ema
+ema = ta.ema(close, emaLength)
+
+// Calculate Support and Resistance (as part of the strategy now): https://www.tradingview.com/v/JDFoWQbL/
+leftBars = input(15, title="Left Bars")
+rightBars = input(15, title="Right Bars")
+
+highUsePivot = fixnan(ta.pivothigh(leftBars, rightBars)[1])
+lowUsePivot = fixnan(ta.pivotlow(leftBars, rightBars)[1])
+// OPTIONAL
+// r1 = plot(highUsePivot, color=ta.change(highUsePivot) ? na : #FF0000,  linewidth=3, offset=-(rightBars+1), title="Resistance")
+// s1 = plot(lowUsePivot, color=ta.change(lowUsePivot) ? na : #233dee,  linewidth=3, offset=-(rightBars+1), title="Support")
+
+// Calculate BB
+source = close
+basis = ta.sma(source, length)
+dev = multKC * ta.stdev(source, length)
+upperBB = basis + dev
+lowerBB = basis - dev
+
+// Calculate KC
+ma = ta.sma(source, lengthKC)
+range_1 = useTrueRange ? ta.tr : high - low
+rangema = ta.sma(range_1, lengthKC)
+upperKC = ma + rangema * multKC
+lowerKC = ma - rangema * multKC
+
+// Calculate Squeeze Momentum Indicator values
+
+sqzOn  = (lowerBB > lowerKC) and (upperBB < upperKC)
+sqzOff = (lowerBB < lowerKC) and (upperBB > upperKC)
+noSqz  = (sqzOn == false) and (sqzOff == false)
+// Define basic conditions to avoid repetition
+basicSqueezeOff = sqzOff and not sqzOn
+basicSqueezeOn = sqzOn and not sqzOff
+
+val = ta.linreg(source - math.avg(math.avg(ta.highest(high, lengthKC), ta.lowest(low, lengthKC)), ta.sma(close, lengthKC)), lengthKC, 0)
+
+// CONDITION DEFINITION
+
+// Summary
+// squezeCondition is true when sqzOff = true, sqzOn false, and the previous 6 entries had: sqzOff = false, sqzOn true, so applies to sqzOff[6] - sqzOff[1] and so on.
+// longDirection is true if val > val[1] and val[1] > val[2] and val[2] > val[3] (i.e. growing historical val)
+// aboveResistance is true when bar close price > resistance level, else false
+// longCondition true if squezeCondition is true and longDirection true and aboveResistance true
+// shortDirection is true if val < val[1] and val[1] < val[2] and val[2] < val[3] (i.e. reducing historical val)
+// belowSupport is true if bar close prce < support level
+// shortCondition true if squezeCondition is true  and shortDirection is true and belowSupport is true
+
+// Trend confirmation conditions
+priceAboveEma = close > ema
+priceBelowEma = close < ema
+
+// Define the key repeating SQUEEZE pattern for clarity
+precedingPatternBaseline = basicSqueezeOn[1] and basicSqueezeOn[2] and basicSqueezeOn[3] and basicSqueezeOn[4] and basicSqueezeOn[5] and basicSqueezeOn[6]
+precedingPatternExtended1 = basicSqueezeOff[1] and basicSqueezeOn[2] and basicSqueezeOn[3] and basicSqueezeOn[4] and basicSqueezeOn[5] and basicSqueezeOn[6] and basicSqueezeOn[7]
+precedingPatternExtended2 = basicSqueezeOff[1] and basicSqueezeOff[2] and basicSqueezeOn[3] and basicSqueezeOn[4] and basicSqueezeOn[5] and basicSqueezeOn[6] and basicSqueezeOn[7] and basicSqueezeOn[8]
+precedingPatternExtended3 = basicSqueezeOff[1] and basicSqueezeOff[2] and basicSqueezeOff[3] and basicSqueezeOn[4] and basicSqueezeOn[5] and basicSqueezeOn[6] and basicSqueezeOn[7] and basicSqueezeOn[8] and basicSqueezeOn[9]
+precedingPatternExtended4 = basicSqueezeOff[1] and basicSqueezeOff[2] and basicSqueezeOff[3] and basicSqueezeOff[4] and basicSqueezeOn[5] and basicSqueezeOn[6] and basicSqueezeOn[7] and basicSqueezeOn[8] and basicSqueezeOn[9] and basicSqueezeOn[10]
+precedingPatternExtended5 = basicSqueezeOff[1] and basicSqueezeOff[2] and basicSqueezeOff[3] and basicSqueezeOff[4] and basicSqueezeOff[5] and basicSqueezeOn[6] and basicSqueezeOn[7] and basicSqueezeOn[8] and basicSqueezeOn[9] and basicSqueezeOn[10] and basicSqueezeOn[11]
+
+precedingPatternMatch = precedingPatternBaseline or precedingPatternExtended1 or precedingPatternExtended2 or precedingPatternExtended3 or precedingPatternExtended4 or precedingPatternExtended5
+
+squeezeCondition = basicSqueezeOff and precedingPatternMatch
+
+// Determine if the squeeze condition is true
+
+
+// Determine the long and short direction
+longDirection = val > val[1] and val[1] > val[2] and val[2] > val[3]
+shortDirection = val < val[1] and val[1] < val[2] and val[2] < val[3]
+
+// Conditions for being above resistance or below support
+aboveResistance = close > highUsePivot
+belowSupport = close < lowUsePivot
+
+// Check for Last Entry
+var int lastLongEntryBarIndex = na
+var int lastShortEntryBarIndex = na
+
+// Define the long and short conditions
+longCondition = squeezeCondition and longDirection and aboveResistance and priceAboveEma
+
+shortCondition = squeezeCondition and shortDirection and belowSupport and priceBelowEma
+
+// Order close condition - IGNORE FOR NOW
+// If winning: when momentum slows down i.e. val growth/shrink trend changes
+// If losing: stop loss: 2x ATR
+
+// // Updating last entry bar index after an entry
+// if (longCondition)
+//     lastLongEntryBarIndex := bar_index
+// if (shortCondition)
+//     lastShortEntryBarIndex := bar_index
+
+// Conditions to allow new entry based on last entry bar index
+// Current rule: we cannot make another entry after 6 days: IGNORE FOR NOW, TODO LATER: convert the 6 days into input variable 
+allowLongEntry = na(lastLongEntryBarIndex) or (bar_index - lastLongEntryBarIndex > cooldownPeriod)
+allowShortEntry = na(lastShortEntryBarIndex) or (bar_index - lastShortEntryBarIndex > cooldownPeriod)
+
+// Close condition for entries
+closeLong = val < val[1] and basicSqueezeOn
+closeShort = val > val[1] and basicSqueezeOn
+
+// POTENTIALLY ADD take profit 
+
+
+// ORDER EXECUTION
+if (longCondition and allowLongEntry)
+    strategy.entry("Long", strategy.long, comment = "LONG")
+    strategy.exit(id="SLexitLong", from_entry="Long", stop=close - atrMultiplier * atr, comment="SL Long")  // Stop loss for long position using ATR multiplier
+    lastLongEntryBarIndex := bar_index  // Update the last entry index to current bar
+
+if (shortCondition and allowShortEntry)
+    strategy.entry("Short", strategy.short, comment = "SHORT")
+    strategy.exit(id="SLExitShort", from_entry= "Short", stop=close + atrMultiplier * atr, comment="SL Short")  // Stop loss for short position using ATR multiplier
+    lastShortEntryBarIndex := bar_index  // Update the last entry index to current bar
+
+if closeLong
+    strategy.close("Long", comment = "SELL")
+
+if closeShort
+    strategy.close("Short", comment = "COVER")
+
+// PLOTTING
+
+// Get the last value when 'val' was positive and the last value when 'val' was negative
+valWasPositive = ta.valuewhen(val > 0, val, 1)
+valWasNegative = ta.valuewhen(val < 0, val, 1)
+// Define the color of the histogram based on the conditions, using the retrieved values above
+bcolor = val > 0 ? (val > valWasPositive ? color.rgb(48, 255, 55) : color.rgb(0, 67, 2)) : (val < valWasNegative ? color.rgb(244, 45, 45) : color.rgb(106, 0, 56))
+// Define the color of the zero line based on squeeze conditions
+scolor = noSqz ? color.blue : sqzOn ? color.orange : color.purple
+// Plot the histogram
+plot(val, color=bcolor, style=plot.style_histogram, linewidth=4)
+// Plot the zero line
+plot(0, color=scolor, style=plot.style_cross, linewidth=2)
+
+// Optional: Resistance and support level plotting
+// r1 = plot(highUsePivot, color=ta.change(highUsePivot) ? na : #FF0000,  linewidth=3, offset=-(rightBars+1), title="Resistance")
+// s1 = plot(lowUsePivot, color=ta.change(lowUsePivot) ? na : #233dee,  linewidth=3, offset=-(rightBars+1), title="Support")
